@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  /* Brand / Primary */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+
+  /* Theme agnostic surfaces */
+  --surface-0: var(--bg-main);
+  --surface-50: var(--bg-subtle);
+  --surface-100: var(--bg-muted);
+
+  --border-base: var(--border-subtle);
+}
+
+/* Electron Drag Regions */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag !important;
+}
+
+/* Global Variables */
+:root {
+  --bg-main: #ffffff;
+  --bg-subtle: #fafafa;
+  --bg-muted: #f4f4f5;
+  --text-main: #09090b;
+  --text-muted: #71717a;
+  --border-subtle: #e4e4e7;
+  --card-bg: #ffffff;
+  --accent-blue: #3b82f6;
+}
+
+.dark {
+  --bg-main: #09090b;
+  --bg-subtle: #121214;
+  --bg-muted: #18181b;
+  --text-main: #fafafa;
+  --text-muted: #a1a1aa;
+  --border-subtle: #27272a;
+  --card-bg: #121214;
+  --accent-blue: #60a5fa;
+}
+
+body {
+  @apply bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 antialiased;
+  margin: 0;
+  font-family: var(--font-sans);
+  overflow: hidden;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+/* Scrollbars */
+.app-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.app-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.app-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-zinc-300 dark:bg-zinc-800 rounded-full;
+}
+.app-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-zinc-400 dark:bg-zinc-700;
+}
+
+/* Custom Utilities for Consistency */
+.glass-pane {
+  @apply bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-800;
+}
+
+.card-base {
+  @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm;
+}
+
+.input-base {
+  @apply w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 
+         focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all;
+}
+
+.button-primary {
+  @apply px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold 
+         shadow-lg shadow-primary-600/20 active:scale-95 transition-all;
+}
+
+.heading-1 {
+  @apply text-2xl font-bold tracking-tight text-zinc-900 dark:text-white;
+}
+.text-label {
+  @apply text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400;
+}
