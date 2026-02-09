@@ -11,7 +11,8 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import Breadcrumbs from "../../components/Breadcrumbs";
-import { apiClient } from "../../services/api/authService";
+import Dropdown from "../../components/Dropdown";
+import { apiClient } from "../../services/authService";
 
 // --- Form Type Definition ---
 interface PatientRegistrationForm {
@@ -164,19 +165,17 @@ const RegisterPatientView = () => {
             {/* Gender */}
             <div className="space-y-1">
               <label className={labelClasses}>Gender <span className="text-rose-500">*</span></label>
-              <select 
-                name="gender"
-                className={inputClasses + " appearance-none cursor-pointer"}
-                required
-                value={formData.gender}
-                onChange={handleInputChange}
-                disabled={loading || isOffline}
-              >
-                <option value="">Select Gender</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-              </select>
+              <Dropdown
+                label={formData.gender ? (formData.gender === "male" ? "Male" : formData.gender === "female" ? "Female" : "Other") : "Select Gender"}
+                items={[
+                  { label: "Select Gender", onClick: () => setFormData(prev => ({ ...prev, gender: "" })) },
+                  { label: "Male", onClick: () => setFormData(prev => ({ ...prev, gender: "male" })) },
+                  { label: "Female", onClick: () => setFormData(prev => ({ ...prev, gender: "female" })) },
+                  { label: "Other", onClick: () => setFormData(prev => ({ ...prev, gender: "other" })) }
+                ]}
+                className="w-full"
+                buttonClassName={inputClasses + " appearance-none cursor-pointer"}
+              />
             </div>
 
             {/* Phone */}

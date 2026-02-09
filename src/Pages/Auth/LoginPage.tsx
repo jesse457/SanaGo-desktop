@@ -1,4 +1,4 @@
-import React, { useState, ChangeEvent, FormEvent } from "react";
+import React, { useState, useEffect, ChangeEvent, FormEvent } from "react";
 import {
   Eye,
   EyeOff,
@@ -12,9 +12,12 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
+
+// Hooks & Providers
 import { useTheme } from "../../providers/ThemeProvider";
 import { useAuth } from "../../providers/AuthProvider";
-import { authService } from "../../services/api/authService"; // Ensure this path matches your file structure
+import { useNetworkStatus } from "../../providers/NetworkProvider"; 
+import { authService } from "../../services/authService";
 
 interface LoginFormData {
   email: string;
@@ -25,7 +28,8 @@ interface LoginFormData {
 const LoginPage: React.FC = () => {
   const { theme } = useTheme();
   const navigate = useNavigate();
-  const { login } = useAuth(); // Access the global auth method
+  const { login } = useAuth();
+  const { isOnline } = useNetworkStatus();
   
   // States
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -37,60 +41,68 @@ const LoginPage: React.FC = () => {
     remember: false,
   });
 
-  // Handle Input Changes
+  /**
+   * ELECTRON TITLEBAR INTEGRATION
+   * Uses your specific electronAPI.updateTitleBar from contextBridge
+   */
+useEffect(() => {
+  // On the Login page, the buttons are over the RIGHT panel (which is always dark/zinc-950)
+  // We match the background of the image overlay to make it look "transparent"
+  window.electronAPI.updateTitleBar({
+    theme: 'dark', // Force dark icons for the image side
+    backgroundColor: '#09090b', // This matches your zinc-950 image overlay
+    symbolColor: '#a1a1aa', // Zinc-400 symbols
+  });
+
+  return () => {
+    // When leaving login, return to standard theme-based colors
+    window.electronAPI.updateTitleBar({
+      theme: theme as 'light' | 'dark' | 'system',
+      backgroundColor: theme === 'dark' ? '#09090b' : '#ffffff',
+      symbolColor: theme === 'dark' ? '#ffffff' : '#3f3f46',
+    });
+  };
+}, [theme]);
+
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
-    // Clear error when user starts typing again
     if (error) setError(null);
   };
 
-  // Handle Form Submission
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!isOnline) {
+      setError("Network protocol failure. Cannot establish connection while offline.");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
-      // 1. Attempt Login via API
       const response = await authService.login({
         email: formData.email,
         password: formData.password,
       });
 
-      // 2. Save Session (Updates Context & Electron Secure Storage)
       await login(response.token, response.user);
 
-      // 3. Redirect based on Role
-      // Adjust these paths to match your exact route definitions
+      // Role-based redirection logic
       switch (response.user.role) {
-        case 'admin':
-          navigate('/admin/dashboard');
-          break;
-        case 'receptionist':
-          navigate('/reception/dashboard');
-          break;
-        case 'doctor':
-          navigate('/doctor/dashboard');
-          break;
-        case 'pharmacist':
-          navigate('/pharmacist/dashboard');
-          break;
-        case 'lab_technician':
-          navigate('/laboratory/dashboard');
-          break;
-        default:
-          // Fallback if role is undefined or unknown
-          navigate('/'); 
+        case 'admin': navigate('/admin/dashboard'); break;
+        case 'receptionist': navigate('/reception/dashboard'); break;
+        case 'doctor': navigate('/doctor/dashboard'); break;
+        case 'pharmacist': navigate('/pharmacist/dashboard'); break;
+        case 'lab-technician': navigate('/laboratory/dashboard'); break;
+        default: navigate('/'); 
       }
-
     } catch (err: any) {
-      console.error("Login Error:", err);
-      // specific error message from backend or generic fallback
-      const message = err.response?.data?.message || "Connection failed. Please check your credentials.";
+      const message = err.response?.data?.message || "Access Denied. Invalid credentials or system error.";
+      console.log(err)
       setError(message);
     } finally {
       setIsLoading(false);
@@ -98,8 +110,11 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 selection:bg-primary-500/30">
+    <div className="min-h-screen grid lg:grid-cols-2 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 selection:bg-primary-500/30 overflow-hidden">
       
+      {/* DRAGGABLE REGION (Handles the transparent title bar area) */}
+      <div className="fixed top-0 left-0 w-full h-10 z-[60] pointer-events-none" style={{ WebkitAppRegion: 'drag' } as any} />
+
       {/* ERROR TOAST */}
       <AnimatePresence>
         {error && (
@@ -107,13 +122,13 @@ const LoginPage: React.FC = () => {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed top-20 right-8 z-[100] max-w-sm w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md p-4 rounded-2xl shadow-2xl flex items-start gap-4 border border-rose-500/20"
+            className="fixed top-12 right-8 z-[100] max-w-sm w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md p-4 rounded-2xl shadow-2xl flex items-start gap-4 border border-rose-500/20"
           >
             <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center shrink-0">
               <XCircle className="text-rose-500" size={20} />
             </div>
             <div className="flex-1">
-              <h4 className="text-sm font-bold">Access Denied</h4>
+              <h4 className="text-sm font-bold uppercase tracking-tight">Security Alert</h4>
               <p className="text-[11px] text-zinc-500 font-medium mt-0.5">{error}</p>
             </div>
           </motion.div>
@@ -121,11 +136,9 @@ const LoginPage: React.FC = () => {
       </AnimatePresence>
 
       {/* LEFT: CONTENT */}
-      <div className="flex flex-col justify-center px-8 sm:px-16 lg:px-24 xl:px-32 relative overflow-hidden">
-        {/* Background Gradients */}
+      <div className="flex flex-col justify-center px-8 sm:px-16 lg:px-24 xl:px-32 relative">
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-20">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary-500/30 blur-[120px] rounded-full" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-indigo-500/20 blur-[100px] rounded-full" />
         </div>
 
         <motion.div
@@ -133,9 +146,9 @@ const LoginPage: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           className="relative z-10 w-full max-w-md mx-auto"
         >
-          <div className="mb-12">
+          <div className="mb-10">
             <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 rounded-2xl bg-primary-600 flex items-center justify-center shadow-xl shadow-primary-600/20">
+              <div className="w-12 h-12 rounded-2xl bg-primary-600 flex items-center justify-center shadow-xl shadow-primary-600/20" style={{ WebkitAppRegion: 'no-drag' } as any}>
                 <ShieldCheck className="text-white" size={28} strokeWidth={2.5} />
               </div>
               <div>
@@ -150,7 +163,7 @@ const LoginPage: React.FC = () => {
             <p className="text-zinc-500 font-medium text-sm">Clinical Enterprise Access Control</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleLogin} className="space-y-5" style={{ WebkitAppRegion: 'no-drag' } as any}>
             <div className="space-y-2">
               <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest ml-1">Email / ID</label>
               <div className="relative group">
@@ -195,7 +208,7 @@ const LoginPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between py-1 px-1">
+            {/* <div className="flex items-center justify-between py-1 px-1">
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -215,11 +228,11 @@ const LoginPage: React.FC = () => {
                   Keep Session
                 </span>
               </label>
-            </div>
+            </div> */}
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !isOnline}
               className="w-full h-14 bg-primary-600 hover:bg-primary-700 disabled:bg-zinc-400 text-white rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl shadow-primary-600/20 active:scale-[0.98]"
             >
               {isLoading ? (
@@ -228,15 +241,21 @@ const LoginPage: React.FC = () => {
                   Verifying...
                 </>
               ) : (
-                <>Establish Connection</>
+                <>{isOnline ? 'Establish Connection' : 'System Offline'}</>
               )}
             </button>
           </form>
 
           <div className="mt-12 pt-8 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Global Node: Active</span>
+              <div className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                isOnline 
+                ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" 
+                : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]"
+              }`} />
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                Global Node: {isOnline ? 'Active' : 'Offline'}
+              </span>
             </div>
             <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">v1.2.0-secure</p>
           </div>

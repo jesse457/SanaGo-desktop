@@ -17,14 +17,14 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import Breadcrumbs from "../../components/Breadcrumbs";
-import { apiClient } from "../../services/api/authService";
-import { storageService } from "../../services/api/StorageService";
+import { apiClient } from "../../services/authService";
+import { useOfflineSync } from "../../hooks/useOfflineSync";
 
 interface Patient {
   id: number;
   first_name: string;
   last_name: string;
-  full_name: string; // From PatientResource
+  full_name: string;
   uid?: string;
   phone?: string;
 }
@@ -38,78 +38,73 @@ interface Doctor {
 const BookAppointmentView = () => {
   const navigate = useNavigate();
   
-  const [loading, setLoading] = useState(false);
-  const [isOffline, setIsOffline] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-
+  // --- Form State ---
   const [patientSearch, setPatientSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
-  
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [time, setTime] = useState("");
   const [reason, setReason] = useState("");
-  const [price, setPrice] = useState("");
+  const [price, setPrice] = useState(""); // State for Price
+  const [submitLoading, setSubmitLoading] = useState(false);
 
-  const [foundPatients, setFoundPatients] = useState<Patient[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // --- Hook 1: Fetch Doctors List ---
+  const { 
+    data: dashboardData, 
+    error: doctorError 
+  } = useOfflineSync<any>({
+    key: "reception_dashboard_main",
+    fetchFn: async () => {
+      const response = await apiClient.get('/receptionist/dashboard'); 
+      return response.data;
+    }
+  });
 
-  useEffect(() => {
-    loadDoctors();
-  }, []);
+  const doctors: Doctor[] = dashboardData?.dropdowns?.doctors || [];
+  const isOffline = !!doctorError;
 
+  // --- Hook 2: Patient Search ---
   useEffect(() => {
     const timer = setTimeout(() => {
-      // Only search if we have 2+ characters and no patient is currently selected
       if (patientSearch.trim().length >= 2 && !selectedPatient) {
-        performSearch(patientSearch);
+        setDebouncedSearch(patientSearch);
       } else {
-        setFoundPatients([]);
+        setDebouncedSearch("");
       }
     }, 500);
     return () => clearTimeout(timer);
   }, [patientSearch, selectedPatient]);
 
-  const loadDoctors = async () => {
-    try {
-      const response = await apiClient.get('/receptionist/dashboard'); 
-      const doctorList = response.data.dropdowns?.doctors || [];
-      setDoctors(doctorList);
-      setIsOffline(false);
-      await storageService.save('doctors_list', doctorList);
-    } catch (error) {
-      const cachedDoctors = await storageService.get<Doctor[]>('doctors_list');
-      if (cachedDoctors) {
-        setDoctors(cachedDoctors);
-        setIsOffline(true);
-      }
-    }
-  };
+  const {
+    data: searchResults,
+    isLoading: isSearching
+  } = useOfflineSync<Patient[]>({
+    key: `patient_search_${debouncedSearch}`, 
+    fetchFn: async () => {
+      if (!debouncedSearch) return [];
+      // Calls the backend search logic (previously getAppointmentsQuery context)
+      const response = await apiClient.get(`/receptionist/patients/search?query=${debouncedSearch}`);
+      return response.data.data || response.data;
+    },
+    autoRefresh: false 
+  });
 
-  const performSearch = async (query: string) => {
-    if (isOffline) return;
-    setIsSearching(true);
-    try {
-      const response = await apiClient.get(`/receptionist/patients/search?query=${query}`);
-      // IMPORTANT FIX: Access .data.data because of Laravel Resource wrapping
-      const data = response.data.data || response.data;
-      setFoundPatients(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Patient search failed");
-      setFoundPatients([]);
-    } finally {
-      setIsSearching(false);
-    }
-  };
+  const foundPatients = searchResults || [];
 
+  // --- Actions ---
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOffline) {
+        toast.error("Cannot book appointments while offline.");
+        return;
+    }
     if (!selectedPatient || !selectedDoctorId || !time) {
       toast.error("Please fill in all required fields.");
       return;
     }
 
-    setLoading(true);
+    setSubmitLoading(true);
     try {
       const payload = {
         patient_id: selectedPatient.id,
@@ -117,7 +112,7 @@ const BookAppointmentView = () => {
         date: date,
         time: time,
         reason: reason,
-        price: price ? parseFloat(price) : null
+        price: price ? parseFloat(price) : null // Logic to send price
       };
 
       await apiClient.post('/receptionist/appointments', payload);
@@ -126,7 +121,7 @@ const BookAppointmentView = () => {
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Booking failed.");
     } finally {
-      setLoading(false);
+      setSubmitLoading(false);
     }
   };
 
@@ -143,7 +138,7 @@ const BookAppointmentView = () => {
           <div>
             <Breadcrumbs items={[{ label: "Appointments" }, { label: "Book Appointment" }]} />
             <h1 className="heading-1 font-black text-zinc-900 dark:text-white tracking-tighter flex items-center gap-3">
-              Book Appointment {isOffline && <WifiOff className="text-rose-500 w-5 h-5" />}
+              Book Appointment {isOffline && <WifiOff className="text-rose-500 w-5 h-5 animate-pulse" />}
             </h1>
           </div>
         </div>
@@ -176,7 +171,7 @@ const BookAppointmentView = () => {
                   </div>
 
                   {/* SEARCH RESULTS DROPDOWN */}
-                  {foundPatients.length > 0 && (
+                  {foundPatients.length > 0 && debouncedSearch && (
                     <div className="absolute z-20 mt-2 w-full bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
                       {foundPatients.map((p) => (
                         <button
@@ -184,7 +179,8 @@ const BookAppointmentView = () => {
                           type="button"
                           onClick={() => {
                             setSelectedPatient(p);
-                            setFoundPatients([]);
+                            setPatientSearch("");
+                            setDebouncedSearch("");
                           }}
                           className="w-full text-left px-6 py-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors border-b last:border-0 border-zinc-100 dark:border-zinc-800 group flex items-center justify-between"
                         >
@@ -247,13 +243,14 @@ const BookAppointmentView = () => {
               </div>
             </section>
 
-            {/* 3. DETAILS */}
+            {/* 3. DETAILS (Date, Time, Price, Reason) */}
             <section className="space-y-6">
               <h2 className={sectionTitleClasses}>
                 <span className="w-6 h-6 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 flex items-center justify-center text-[10px]">3</span>
                 Appointment Details
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Date */}
                 <div>
                   <label className={labelClasses}>Date *</label>
                   <div className={inputContainerClasses}>
@@ -261,6 +258,8 @@ const BookAppointmentView = () => {
                     <input type="date" className={inputBaseClasses} required value={date} onChange={e => setDate(e.target.value)} />
                   </div>
                 </div>
+
+                {/* Time */}
                 <div>
                   <label className={labelClasses}>Arrival Time *</label>
                   <div className={inputContainerClasses}>
@@ -268,7 +267,26 @@ const BookAppointmentView = () => {
                     <input type="time" className={inputBaseClasses} required value={time} onChange={e => setTime(e.target.value)} />
                   </div>
                 </div>
-                <div className="md:col-span-2">
+
+                {/* Price (New Field) */}
+                <div>
+                  <label className={labelClasses}>Consultation Price</label>
+                  <div className={inputContainerClasses}>
+                    <DollarSign size={18} className="text-zinc-400" />
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      min="0"
+                      placeholder="0.00" 
+                      className={inputBaseClasses} 
+                      value={price} 
+                      onChange={e => setPrice(e.target.value)} 
+                    />
+                  </div>
+                </div>
+
+                {/* Reason */}
+                <div>
                   <label className={labelClasses}>Reason</label>
                   <div className={inputContainerClasses}>
                     <FileText size={18} className="text-zinc-400" />
@@ -282,10 +300,10 @@ const BookAppointmentView = () => {
           <div className="bg-zinc-50 dark:bg-zinc-900/50 px-8 py-6 flex items-center justify-end border-t border-zinc-100 dark:border-zinc-800">
             <button
               type="submit"
-              disabled={loading || !selectedPatient || !selectedDoctorId || isOffline}
-              className="button-primary flex items-center gap-3 py-4 px-10 shadow-xl bg-gradient-to-tr from-rose-500 to-pink-500 border-none disabled:opacity-30"
+              disabled={submitLoading || !selectedPatient || !selectedDoctorId || isOffline}
+              className="button-primary flex items-center gap-3 py-4 px-10 shadow-xl bg-gradient-to-tr from-rose-500 to-pink-500 border-none disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              {loading ? <Loader2 size={20} className="animate-spin" /> : <ClipboardCheck size={20} />}
+              {submitLoading ? <Loader2 size={20} className="animate-spin" /> : <ClipboardCheck size={20} />}
               <span>CONFIRM BOOKING</span>
               <ArrowRight size={18} className="opacity-50" />
             </button>

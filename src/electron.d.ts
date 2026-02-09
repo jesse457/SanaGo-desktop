@@ -1,3 +1,6 @@
+import Echo from "laravel-echo";
+import Pusher from "pusher-js";
+
 export interface ElectronAPI {
   minimize: () => void;
   maximize: () => void;
@@ -18,10 +21,18 @@ export interface ElectronAPI {
   secureSet: (key: string, data: any) => Promise<boolean>;
   secureGet: <T>(key: string) => Promise<T | null>;
   secureDelete: (key: string) => Promise<boolean>;
+  secureClear: () => Promise<boolean>;
 }
 
 declare global {
   interface Window {
+    /** Custom Electron API via Preload script */
     electronAPI: ElectronAPI;
+    
+    /** Laravel Echo instance for real-time notifications */
+    Echo: Echo;
+    
+    /** Pusher class constructor (required by Echo) */
+    Pusher: typeof Pusher;
   }
 }

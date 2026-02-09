@@ -1,5 +1,5 @@
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutGrid, FlaskConical, History, Settings2,
   ChevronLeft, ChevronRight, LogOut, Beaker
@@ -7,6 +7,7 @@ import {
 import { useTheme } from "../providers/ThemeProvider";
 import SidebarItem from "./SidebarItem";
 import { cn } from "../utils/cn";
+import { useAuth } from "../providers/AuthProvider";
 
 interface LabSidebarProps {
   collapsed: boolean;
@@ -14,9 +15,14 @@ interface LabSidebarProps {
 }
 
 const LabSidebar: React.FC<LabSidebarProps> = ({ collapsed, setCollapsed }) => {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-  const location = useLocation();
+   const { theme } = useTheme();
+    const { user, logout } = useAuth(); // 2. Get user data and logout function
+    const location = useLocation();
+    const navigate = useNavigate();
+    const handleLogout = async () => {
+      await logout();
+      navigate("/login");
+    };
 
   const menuGroups = [
     {
@@ -42,8 +48,8 @@ const LabSidebar: React.FC<LabSidebarProps> = ({ collapsed, setCollapsed }) => {
 
   return (
     <aside className={cn(
-      "relative flex flex-col h-full transition-all duration-300 ease-in-out z-40 border-r",
-      isDark ? "bg-zinc-950 border-zinc-900 text-zinc-400" : "bg-zinc-50 border-zinc-200 text-zinc-600",
+      "relative flex flex-col h-full transition-all duration-300 ease-in-out dark:bg-zinc-950 dark:border-zinc-900 dark:text-zinc-400 z-40 border-r bg-zinc-50 border-zinc-200 text-zinc-600",
+    
       collapsed ? "w-[72px]" : "w-64",
     )}>
       <div className="h-16 flex items-center px-4 mb-2 shrink-0">
@@ -54,7 +60,7 @@ const LabSidebar: React.FC<LabSidebarProps> = ({ collapsed, setCollapsed }) => {
         </div>
         {!collapsed && (
           <div className="ml-3 flex flex-col animate-in fade-in slide-in-from-left-2 duration-300">
-            <span className={cn("font-black text-sm tracking-tight uppercase", isDark ? "text-white" : "text-zinc-900")}>Laboratory</span>
+            <span className={cn("font-black text-sm tracking-tight uppercase dark:text-white text-zinc-900")}>Laboratory</span>
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] leading-none">Diagnostic Node</span>
           </div>
         )}
@@ -65,25 +71,33 @@ const LabSidebar: React.FC<LabSidebarProps> = ({ collapsed, setCollapsed }) => {
           <div key={idx} className="space-y-1">
             {!collapsed && <p className="px-3 text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-3 opacity-60">{group.group}</p>}
             {group.items.map((item) => (
-              <SidebarItem key={item.to} {...item} collapsed={collapsed} isDark={isDark}  />
+              <SidebarItem key={item.to} {...item} collapsed={collapsed}   />
             ))}
           </div>
         ))}
       </nav>
 
       <div className="p-4 mt-auto">
-        <div className={cn("flex items-center gap-3 p-2.5 rounded-2xl transition-all border", isDark ? "bg-zinc-900/50 border-zinc-800/50" : "bg-white border-zinc-200 shadow-sm", collapsed ? "justify-center" : "")}>
+        <div className={cn("flex items-center gap-3 p-2.5 rounded-2xl transition-all border dark:bg-zinc-900/50 dark:border-zinc-800/50 bg-white border-zinc-200 shadow-sm", collapsed ? "justify-center" : "")}>
           <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-black border border-indigo-200 dark:border-indigo-500/20">LT</div>
           {!collapsed && (
             <div className="flex-1 overflow-hidden animate-in fade-in duration-300">
-              <span className={cn("text-xs font-black truncate block tracking-tight uppercase", isDark ? "text-white" : "text-zinc-900")}>Lab Tech</span>
-              <p className="text-[10px] text-zinc-500 truncate uppercase font-bold tracking-widest">Technician</p>
+              <span className={cn("text-xs font-black truncate block tracking-tight uppercase dark:text-white text-zinc-900")}>{user?.name}</span>
+              <p className="text-[10px] text-zinc-500 truncate uppercase font-bold tracking-widest">Lab Technician</p>
             </div>
           )}
         </div>
       </div>
-
-      <button onClick={() => setCollapsed(!collapsed)} className={cn("absolute -right-3 top-20 w-6 h-6 rounded-md flex items-center justify-center shadow-xl border transition-all z-50", isDark ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white" : "bg-white border-zinc-200 text-zinc-500 hover:text-zinc-900")}>
+ {!collapsed && (
+                              <button
+                                onClick={handleLogout} // 3. Attach Logout Handler
+                                className="p-1.5 text-zinc-400 hover:text-rose-500 transition-colors"
+                                title="Logout"
+                              >
+                                <LogOut size={16} strokeWidth={2.5} />
+                              </button>
+                            )}
+      <button onClick={() => setCollapsed(!collapsed)} className={cn("absolute -right-3 top-20 w-6 h-6 rounded-md flex items-center justify-center shadow-xl border transition-all z-50 dark:bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white bg-white border-zinc-200 text-zinc-500 hover:text-zinc-900")}>
         {collapsed ? <ChevronRight size={12} strokeWidth={3} /> : <ChevronLeft size={12} strokeWidth={3} />}
       </button>
     </aside>

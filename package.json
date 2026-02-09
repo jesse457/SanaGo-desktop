@@ -1,16 +1,79 @@
 {
   "name": "sanago",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
+  "author": {
+    "name": "Sanago Healthcare",
+    "email": "info@sanago.com"
+  },
   "type": "module",
-  "main": "main.ts",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build:react": "vite build",
+    "build:electron": "tsc main.ts --outDir dist-electron --module NodeNext --target ESNext --moduleResolution NodeNext --esModuleInterop --skipLibCheck",
+    "prebuild": "npm run build:react && npm run build:electron",
+    "build:linux": "npm run prebuild && electron-builder --linux",
+    "build:win": "npm run prebuild && electron-builder --win",
+    "build:win:32": "npm run prebuild && electron-builder --win --ia32",
+    "build:win:64": "npm run prebuild && electron-builder --win --x64",
+    "build:win:portable": "npm run prebuild && electron-builder --win --portable",
     "lint": "eslint .",
     "preview": "vite preview",
     "extract": "i18next-parser",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron . --no-sandbox\""
+  },
+  "build": {
+    "appId": "com.sanago.app",
+    "productName": "Sanago",
+    "copyright": "© 2026 Sanago Healthcare",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility",
+      "icon": "build/logo.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "build/logo.ico",
+      "extraResources": [
+        {
+          "from": "build/logo.ico",
+          "to": "logo.ico"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "installerIcon": "build/logo.ico",
+      "uninstallerIcon": "build/logo.ico",
+      "installerHeaderIcon": "build/logo.ico",
+      "artifactName": "${productName}-${version}-setup.${arch}.exe",
+      "uninstallDisplayName": "Sanago Healthcare",
+      "deleteAppDataOnUninstall": false
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    }
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -19,16 +82,20 @@
     "chart.js": "^4.5.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dexie": "^4.3.0",
     "electron-store": "^11.0.2",
     "framer-motion": "^12.25.0",
+    "laravel-echo": "^2.3.0",
     "lucide-react": "^0.562.0",
+    "pusher-js": "^8.4.0",
     "react": "^19.2.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.0",
     "react-i18next": "^16.5.2",
     "react-router-dom": "^7.12.0",
+    "rxdb": "^16.21.1",
+    "rxjs": "^7.8.2",
     "sonner": "^2.0.7",
-    "sqlite": "^5.1.1",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18"
   },
@@ -40,6 +107,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "concurrently": "^9.2.1",
     "electron": "^39.2.7",
+    "electron-builder": "^26.7.0",
     "electron-is-dev": "^3.0.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -49,8 +117,5 @@
     "typescript": "^5.9.3",
     "vite": "npm:rolldown-vite@7.2.5",
     "wait-on": "^9.0.3"
-  },
-  "overrides": {
-    "vite": "npm:rolldown-vite@7.2.5"
   }
 }

@@ -25,7 +25,7 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items = [] }) => {
         className="flex items-center hover:text-primary-600 transition-colors shrink-0 group"
       >
         <Home size={12} className="mr-1.5 group-hover:scale-110 transition-transform" />
-        <span>SanaGo</span>
+        <span>Home</span>
       </Link>
 
       {items.map((item, index) => {

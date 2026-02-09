@@ -4,7 +4,7 @@ import "./index.css";
 import App from "./App";
 import { NetworkProvider } from "./providers/NetworkProvider";
 import { ThemeProvider } from "./providers/ThemeProvider";
-
+import './echo'; //
 // Add these imports
 import "@fontsource/inter/300.css";
 import "@fontsource/inter/400.css";

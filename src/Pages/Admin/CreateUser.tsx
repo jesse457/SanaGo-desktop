@@ -1,4 +1,5 @@
-import React, { useState, ChangeEvent, InputHTMLAttributes, ElementType } from "react";
+import React, { useState, ChangeEvent, FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   User,
   Phone,
@@ -7,70 +8,96 @@ import {
   Briefcase,
   Camera,
   Check,
-  LucideIcon,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import Breadcrumbs from "../../components/Breadcrumbs";
-
-/**
- * 1. Define Props for InputWithIcon
- * We extend standard HTML Input attributes so we can pass things like 'placeholder'
- */
-interface InputWithIconProps extends InputHTMLAttributes<HTMLInputElement> {
-  label: string;
-  icon: LucideIcon | ElementType;
-}
+import { apiClient } from "../../services/authService";
+import InputWithIcon from "../../components/InputWithIcon";
+import Dropdown from "../../components/Dropdown";
 
 const CreateUser: React.FC = () => {
-  // 2. Type the state (can be a string URL or null)
+  const navigate = useNavigate();
   const [preview, setPreview] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 3. Typed event handler for file upload
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone_number: "",
+    address: "",
+    role: "doctor",
+    department_id: "",
+  });
+
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Create a local URL for the image preview
-      const objectUrl = URL.createObjectURL(file);
-      setPreview(objectUrl);
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setPreview(URL.createObjectURL(selectedFile));
+    }
+  };
 
-      // Clean up memory when component unmounts
-      return () => URL.revokeObjectURL(objectUrl);
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    const payload = new FormData();
+    payload.append("name", formData.name);
+    payload.append("email", formData.email);
+    payload.append("phone_number", formData.phone_number);
+    payload.append("address", formData.address);
+    payload.append("role", formData.role);
+    payload.append("department_id", formData.department_id);
+    if (file) payload.append("profile_picture", file);
+
+    try {
+      await apiClient.post("/admin/users", payload, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success("Staff member created and invitation sent!");
+      setTimeout(() => navigate("/admin/users"), 1500);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "An error occurred.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="flex flex-col h-full animate-in slide-in-from-bottom-2 duration-500 overflow-y-auto app-scrollbar">
-      {/* Header */}
+     
       <header className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/90 backdrop-blur-md border-b border-slate-200 dark:border-zinc-800 shadow-sm transition-all">
         <div className="px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <Breadcrumbs
               items={[
                 { label: "Admin" },
-                { label: "List of Staff" },
-                { label: "Add New" },
+                { label: "Staff List" },
+                { label: "Register New" },
               ]}
             />
             <h1 className="heading-1 font-black text-zinc-900 dark:text-white tracking-tighter">
-              Add New Staff Member
+              Register New Staff
             </h1>
-            <p className="text-sm text-zinc-500 mt-2 font-medium">
-              Fill in the form below to register a new doctor, nurse, or staff member.
-            </p>
           </div>
         </div>
       </header>
 
-      {/* Form Card */}
       <div className="card-base shadow-xl border-opacity-50 m-4">
-        <form className="p-10" onSubmit={(e) => e.preventDefault()}>
+        <form className="p-10" onSubmit={handleSubmit}>
           <div className="grid grid-cols-12 gap-12">
-            
             {/* Left: Avatar Upload */}
-            <div className="col-span-12 lg:col-span-4 flex flex-col items-center border-r border-zinc-100 dark:border-zinc-800 lg:pr-12">
+            <div className="col-span-12 lg:col-span-4 flex flex-col items-center border-r border-zinc-100 lg:pr-12">
               <div className="relative group cursor-pointer">
-                <div className="w-40 h-40 rounded-[2.5rem] bg-zinc-50 dark:bg-zinc-800 border-2 border-dashed border-zinc-300 dark:border-zinc-700 overflow-hidden flex items-center justify-center transition-all group-hover:border-primary-500 group-hover:bg-primary-500/5 shadow-inner">
+                <div className="w-40 h-40 rounded-[2.5rem] bg-zinc-50 dark:bg-zinc-800 border-2 border-dashed border-zinc-300 dark:border-zinc-700 overflow-hidden flex items-center justify-center">
                   {preview ? (
-                    <img src={preview} alt="Staff Preview" className="w-full h-full object-cover" />
+                    <img
+                      src={preview}
+                      className="w-full h-full object-cover"
+                      alt="Preview"
+                    />
                   ) : (
                     <Camera className="text-zinc-400" size={40} />
                   )}
@@ -89,62 +116,66 @@ const CreateUser: React.FC = () => {
                   Add Staff Photo
                 </label>
               </div>
-              <p className="text-[10px] text-zinc-400 mt-6 text-center leading-relaxed font-bold uppercase tracking-tighter opacity-70">
-                Make sure the photo is clear.
-                <br />
-                Format: JPG or PNG.
-              </p>
             </div>
 
-            {/* Right: Form Fields */}
+            {/* Right: Form */}
             <div className="col-span-12 lg:col-span-8 space-y-12">
               <section>
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center text-primary-500 border border-primary-500/20">
-                    <User size={16} strokeWidth={2.5} />
-                  </div>
-                  <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-tight">
-                    Staff Information
+                <div className="flex items-center gap-3 mb-8 text-primary-500">
+                  <User size={16} />
+                  <h3 className="text-sm font-black uppercase tracking-tight">
+                    Personal Information
                   </h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <InputWithIcon
-                    label="Staff's Full Name"
+                    label="Full Name"
                     icon={User}
-                    placeholder="Example: Dr. John Doe"
+                    placeholder="Dr. John Doe"
+                    value={formData.name}
+                    onChange={(e: any) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
                     required
                   />
                   <InputWithIcon
-                    label="Active Phone Number"
+                    label="Phone Number"
                     icon={Phone}
                     placeholder="+237 ..."
-                    type="tel"
+                    value={formData.phone_number}
+                    onChange={(e: any) =>
+                      setFormData({ ...formData, phone_number: e.target.value })
+                    }
                   />
-                  <div className="col-span-1 md:col-span-2">
+                  <div className="col-span-2">
                     <InputWithIcon
-                      label="Email Address (Optional)"
+                      label="Email Address"
                       icon={Mail}
-                      placeholder="name@hospital.com"
-                      type="email"
+                      value={formData.email}
+                      onChange={(e: any) =>
+                        setFormData({ ...formData, email: e.target.value })
+                      }
+                      required
                     />
                   </div>
-                  <div className="col-span-1 md:col-span-2">
+                  <div className="col-span-2">
                     <InputWithIcon
-                      label="Home Address (City / Quarter)"
+                      label="Home Address"
                       icon={MapPin}
-                      placeholder="Example: Bonapriso, Douala"
+                      value={formData.address}
+                      onChange={(e: any) =>
+                        setFormData({ ...formData, address: e.target.value })
+                      }
                     />
                   </div>
                 </div>
               </section>
 
               <section>
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-500 border border-indigo-500/20">
-                    <Briefcase size={16} strokeWidth={2.5} />
-                  </div>
-                  <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-tight">
-                    System Account Details
+                <div className="flex items-center gap-3 mb-8 text-indigo-500">
+                  <Briefcase size={16} />
+                  <h3 className="text-sm font-black uppercase tracking-tight">
+                    Work Details
                   </h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -152,38 +183,84 @@ const CreateUser: React.FC = () => {
                     <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">
                       Assigned Department
                     </label>
-                    <select className="w-full h-12 px-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none focus:ring-4 ring-primary-500/10 focus:border-primary-500 transition-all text-zinc-600 dark:text-zinc-300">
-                      <option>Emergency Room (ER)</option>
-                      <option>Maternity Unit</option>
-                      <option>Pharmacy</option>
-                      <option>Laboratory</option>
-                      <option>Pediatrics</option>
-                    </select>
+                    <Dropdown
+                      label={formData.department_id ? (formData.department_id === "1" ? "Emergency Room (ER)" : "Pediatrics") : "Select Dept..."}
+                      items={[
+                        {
+                          label: "Select Dept...",
+                          onClick: () => setFormData({ ...formData, department_id: "" })
+                        },
+                        {
+                          label: "Emergency Room (ER)",
+                          onClick: () => setFormData({ ...formData, department_id: "1" })
+                        },
+                        {
+                          label: "Pediatrics",
+                          onClick: () => setFormData({ ...formData, department_id: "2" })
+                        }
+                      ]}
+                      className="w-full"
+                    />
                   </div>
                   <div className="space-y-3">
                     <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">
-                      User Job (System Role)
+                      System Role
                     </label>
-                    <select className="w-full h-12 px-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none focus:ring-4 ring-primary-500/10 focus:border-primary-500 transition-all text-zinc-600 dark:text-zinc-300">
-                      <option>Doctor</option>
-                      <option>Nurse</option>
-                      <option>Pharmacist</option>
-                      <option>Administrator</option>
-                      <option>Lab Technician</option>
-                    </select>
+                    <Dropdown
+                      label={formData.role.charAt(0).toUpperCase() + formData.role.replace("-", " ").slice(1)}
+                      items={[
+                        {
+                          label: "Doctor",
+                          onClick: () => setFormData({ ...formData, role: "doctor" })
+                        },
+                        {
+                          label: "Nurse",
+                          onClick: () => setFormData({ ...formData, role: "nurse" })
+                        },
+                        {
+                          label: "Receptionist",
+                          onClick: () => setFormData({ ...formData, role: "receptionist" })
+                        },
+                        {
+                          label: "Lab Technician",
+                          onClick: () => setFormData({ ...formData, role: "lab-technician" })
+                        },
+                        {
+                          label: "Administrator",
+                          onClick: () => setFormData({ ...formData, role: "admin" })
+                        },
+                        {
+                          label: "Pharmacist",
+                          onClick: () => setFormData({ ...formData, role: "pharmacist" })
+                        }
+                      ]}
+                      className="w-full"
+                    />
                   </div>
                 </div>
               </section>
             </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="mt-16 pt-8 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-5">
-            <button type="button" className="px-8 py-3 text-[11px] font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-all">
-              Go Back
+          <div className="mt-16 pt-8 border-t border-zinc-100 flex justify-end gap-5">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="px-8 py-3 text-[11px] font-black uppercase tracking-widest text-zinc-400"
+            >
+              Cancel
             </button>
-            <button type="submit" className="button-primary px-10 py-3 shadow-xl flex items-center gap-3">
-              <Check size={20} strokeWidth={3} /> Save & Add Staff
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex items-center gap-3 px-10 py-3 bg-zinc-900 dark:bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-xl"
+            >
+              {isSubmitting ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Check size={20} />
+              )}{" "}
+              Register Staff Member
             </button>
           </div>
         </form>
@@ -191,25 +268,5 @@ const CreateUser: React.FC = () => {
     </div>
   );
 };
-
-/**
- * Sub-component for Input with Icon
- */
-const InputWithIcon: React.FC<InputWithIconProps> = ({ label, icon: Icon, ...props }) => (
-  <div className="space-y-3">
-    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1">
-      {label}
-    </label>
-    <div className="relative group">
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-primary-500 transition-colors">
-        <Icon size={18} strokeWidth={2.5} />
-      </div>
-      <input
-        className="w-full h-12 pl-12 pr-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none focus:bg-white dark:focus:bg-zinc-900 focus:border-primary-500 focus:ring-4 ring-primary-500/10 transition-all shadow-sm"
-        {...props}
-      />
-    </div>
-  </div>
-);
 
 export default CreateUser;

@@ -40,3 +40,13 @@
 .read-the-docs {
   color: #888;
 }
+
+/* This allows the image and content to go UNDER the title bar buttons */
+/* Draggable area - make sure it doesn't cover your login inputs */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}

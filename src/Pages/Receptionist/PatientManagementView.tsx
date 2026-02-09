@@ -17,10 +17,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import Breadcrumbs from "../../components/Breadcrumbs";
+import Dropdown from "../../components/Dropdown";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { apiClient } from "../../services/api/authService";
-import { storageService } from "../../services/api/StorageService";
+import { apiClient } from "../../services/authService";
+import { storageService } from "../../services/StorageService";
 
 // --- Interfaces ---
 interface Patient {
@@ -163,7 +164,7 @@ const PatientManagementView = () => {
             >
               <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
             </button>
-            <Link to="/reception/register-appointment">
+            <Link to="/reception/register-patient">
               <button className="button-primary flex items-center gap-2 py-3.5 px-6 shadow-xl bg-gradient-to-tr from-rose-500 to-pink-500 border-none">
                 <UserPlus size={20} strokeWidth={3} /> New Patient
               </button>
@@ -334,11 +335,15 @@ const PatientManagementView = () => {
                 </div>
                 <div>
                   <label className={labelClasses}>Gender</label>
-                  <select name="gender" defaultValue={selectedPatient.gender} className={inputClasses}>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
+                  <Dropdown
+                    label={selectedPatient.gender || "Select Gender"}
+                    items={[
+                      { label: "Male", onClick: () => { /* Handle gender change */ } },
+                      { label: "Female", onClick: () => { /* Handle gender change */ } },
+                      { label: "Other", onClick: () => { /* Handle gender change */ } }
+                    ]}
+                    className="w-full"
+                  />
                 </div>
                 <div>
                   <label className={labelClasses}>Phone</label>

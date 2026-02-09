@@ -1,5 +1,5 @@
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutGrid,
   ClipboardCheck,
@@ -11,9 +11,9 @@ import {
   LogOut,
   Plus,
 } from "lucide-react";
-import { useTheme } from "../providers/ThemeProvider";
 import SidebarItem from "./SidebarItem";
 import { cn } from "../utils/cn";
+import { useAuth } from "../providers/AuthProvider";
 
 interface PharmacistSidebarProps {
   collapsed: boolean;
@@ -21,9 +21,14 @@ interface PharmacistSidebarProps {
 }
 
 const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ collapsed, setCollapsed }) => {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
 
   const menuGroups = [
     {
@@ -52,9 +57,7 @@ const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ collapsed, setCol
     <aside
       className={cn(
         "relative flex flex-col h-full transition-all duration-300 ease-in-out z-40 border-r",
-        isDark
-          ? "bg-zinc-950 border-zinc-900 text-zinc-400"
-          : "bg-zinc-50 border-zinc-200 text-zinc-600",
+        "bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-900 text-zinc-600 dark:text-zinc-400",
         collapsed ? "w-[72px]" : "w-64",
       )}
     >
@@ -70,12 +73,7 @@ const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ collapsed, setCol
         </div>
         {!collapsed && (
           <div className="ml-3 flex flex-col animate-in fade-in slide-in-from-left-2 duration-300">
-            <span
-              className={cn(
-                "font-black text-sm tracking-tight uppercase",
-                isDark ? "text-white" : "text-zinc-900",
-              )}
-            >
+            <span className="font-black text-sm tracking-tight uppercase text-zinc-900 dark:text-white">
               Pharmacy
             </span>
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] leading-none">
@@ -99,8 +97,6 @@ const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ collapsed, setCol
                 key={item.to}
                 {...item}
                 collapsed={collapsed}
-                isDark={isDark}
-               
               />
             ))}
           </div>
@@ -112,28 +108,21 @@ const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ collapsed, setCol
         <div
           className={cn(
             "flex items-center gap-3 p-2.5 rounded-2xl transition-all border",
-            isDark
-              ? "bg-zinc-900/50 border-zinc-800/50"
-              : "bg-white border-zinc-200 shadow-sm",
+            "bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800/50 shadow-sm dark:shadow-none",
             collapsed ? "justify-center" : "",
           )}
         >
           <div className="relative shrink-0">
             <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs font-black border border-emerald-200 dark:border-emerald-500/20">
-              PJ
+              {user?.name?.substring(0, 2).toUpperCase() || "PH"}
             </div>
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"></div>
           </div>
 
           {!collapsed && (
             <div className="flex-1 overflow-hidden animate-in fade-in duration-300">
-              <span
-                className={cn(
-                  "text-xs font-black truncate block tracking-tight uppercase",
-                  isDark ? "text-white" : "text-zinc-900",
-                )}
-              >
-                John Doe
+              <span className="text-xs font-black truncate block tracking-tight uppercase text-zinc-900 dark:text-white">
+               {user?.name}
               </span>
               <p className="text-[10px] text-zinc-500 truncate uppercase font-bold tracking-widest">
                 Pharmacist
@@ -143,7 +132,8 @@ const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ collapsed, setCol
 
           {!collapsed && (
             <button
-              className="p-1.5 text-zinc-400 hover:text-rose-500 transition-colors"
+              onClick={handleLogout}
+              className="p-1.5 text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
               title="Logout"
             >
               <LogOut size={16} strokeWidth={2.5} />
@@ -157,9 +147,7 @@ const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ collapsed, setCol
         onClick={() => setCollapsed(!collapsed)}
         className={cn(
           "absolute -right-3 top-20 w-6 h-6 rounded-md flex items-center justify-center shadow-xl border transition-all z-50",
-          isDark
-            ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"
-            : "bg-white border-zinc-200 text-zinc-500 hover:text-zinc-900",
+          "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white",
         )}
       >
         {collapsed ? (

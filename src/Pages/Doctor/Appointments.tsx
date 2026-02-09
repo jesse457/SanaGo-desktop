@@ -1,379 +1,299 @@
-import React, { useState, useEffect, useRef } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Search,
-  Bell,
-  X,
-  CheckCircle,
-  Play,
-  User,
-} from "lucide-react";
-import {
-  getHours,
-  getMinutes,
-  format,
-  addDays,
-  isSameDay,
-  subDays,
-  startOfToday,
-} from "date-fns";
-import { useTheme } from "../../providers/ThemeProvider";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { ChevronRight, X, Loader2, Play, CheckCircle, WifiOff, RefreshCw } from "lucide-react";
+import { getHours, getMinutes, format, addDays, isSameDay, subDays, startOfToday } from "date-fns";
+import { apiClient } from "../../services/authService";
+import { toast } from "sonner";
 import Breadcrumbs from "../../components/Breadcrumbs";
-import ContextPopover from "../../components/ContextPopover";
+import { useOfflineSync } from "../../hooks/useOfflineSync"; // Import the hook created previously
 
-const generateMockAppointments = (date) => {
-  const dateStr = format(date, "yyyy-MM-dd");
-  const todayStr = format(new Date(), "yyyy-MM-dd");
-  if (dateStr !== todayStr) return [];
-  return [
-    {
-      id: 1,
-      timeSlot: "09:00 AM - 10:00 AM",
-      startTime: 9,
-      totalPatients: 3,
-      hasActive: true,
-      patients: [
-        {
-          id: 101,
-          name: "Alice Johnson",
-          time: "09:15",
-          status: "In Consultation",
-          color: "bg-amber-500",
-        },
-        {
-          id: 102,
-          name: "Robert Smith",
-          time: "09:30",
-          status: "Waiting in Hall",
-          color: "bg-indigo-500",
-        },
-      ],
-    },
-    {
-      id: 2,
-      timeSlot: "11:00 AM - 12:00 PM",
-      startTime: 11,
-      totalPatients: 5,
-      hasActive: false,
-      patients: [
-        {
-          id: 201,
-          name: "Sarah Connor",
-          time: "11:00",
-          status: "Coming later",
-          color: "bg-emerald-500",
-        },
-      ],
-    },
-  ];
-};
+const DASHBOARD_CACHE_PREFIX = "doctor_schedule_";
 
-const AppointmentModal = ({ isOpen, onClose, group }) => {
-  if (!isOpen || !group) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in"
-        onClick={onClose}
-      />
-      <div className="relative card-base w-full max-w-lg overflow-hidden animate-in zoom-in-95 shadow-2xl">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-black uppercase text-primary-600 tracking-widest">
-                Time Slot
-              </span>
-              <span className="text-[10px] font-black text-zinc-500">
-                {group.timeSlot}
-              </span>
-            </div>
-            <h3 className="text-lg font-black text-zinc-900 dark:text-white">
-              Patients for this Time
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white dark:hover:bg-zinc-800 rounded-xl transition-all text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto app-scrollbar">
-          {group.patients.map((p) => (
-            <div
-              key={p.id}
-              className="flex justify-between items-center p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 group/item hover:border-primary-500/30 transition-all cursor-context-menu"
-              data-context-type="patient"
-              data-context-name={p.name}
-              data-context-id={p.id}
-            >
-              <div className="flex items-center gap-4">
-                <div className={p.color + " w-3 h-3 rounded-full shadow-sm"} />
-                <ContextPopover
-                  type="patient"
-                  data={{ name: p.name, id: p.id }}
-                >
-                  <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 cursor-help">
-                    {p.name}
-                  </span>
-                </ContextPopover>
-              </div>
-              <div className="flex flex-col items-end">
-                <span className="text-[10px] font-black uppercase tracking-tight text-zinc-500">
-                  {p.status}
-                </span>
-                <span className="text-[10px] font-bold text-zinc-400">
-                  At {p.time}
-                </span>
-              </div>
-            </div>
-          ))}
-          {group.patients.length === 0 && (
-            <p className="text-center py-8 text-zinc-500 font-bold italic">
-              No patients registered for this hour.
-            </p>
-          )}
-        </div>
-        <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
-          <button className="button-primary px-8 py-2.5" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+// --- Types ---
+interface APIAppointment {
+  id: number;
+  number: number;
+  raw_status: string;
+  status_label: string; 
+  status_color: "yellow" | "green" | "red" | "blue";
+  patientName: string;
+  patient_id: number;
+  time: string;
+  type: string;
+  notes: string | null;
+}
+
+interface APIGroup {
+  hourInt: number;
+  timeSlot: string;
+  hourRange: string;
+  totalPatients: number;
+  patients: APIAppointment[];
+  hasActive: boolean;
+}
 
 export default function Appointments() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentTime, setCurrentTime] = useState(new Date());
   const [modalOpen, setModalOpen] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState(null);
-  const scrollContainerRef = useRef(null);
-  const dateStripRef = useRef(null);
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const [selectedGroup, setSelectedGroup] = useState<APIGroup | null>(null);
+  const [processingId, setProcessingId] = useState<number | null>(null);
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const appointments = generateMockAppointments(selectedDate);
-  const dates = Array.from({ length: 30 }, (_, i) =>
-    addDays(subDays(startOfToday(), 2), i),
-  );
+  // 1. Prepare Fetch Function for the Hook
+  // We use useCallback so the function reference doesn't change on every render
+  const dateKey = format(selectedDate, "yyyy-MM-dd");
+  
+  const fetchAppointmentsFn = useCallback(async () => {
+    const res = await apiClient.get<{ data: APIGroup[] }>(`/doctor/appointments`, {
+      params: { date: dateKey }
+    });
+    return res.data.data;
+  }, [dateKey]);
 
+  // 2. Implement Offline Sync Hook
+  const { 
+    data: appointmentGroups, 
+    isLoading, 
+    isSyncing, 
+    error, 
+    refetch 
+  } = useOfflineSync<APIGroup[]>({
+    key: `${DASHBOARD_CACHE_PREFIX}${dateKey}`, // Unique key per date
+    fetchFn: fetchAppointmentsFn,
+    autoRefresh: true,
+    refreshInterval: 120000 // 2 minutes
+  });
+
+  // 3. Reactive Modal Update
+  // If the data updates in the background (polling) while the modal is open,
+  // update the modal content immediately.
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    if (isSameDay(selectedDate, new Date()) && scrollContainerRef.current) {
-      const hour = getHours(new Date());
-      scrollContainerRef.current.scrollTo({
-        top: hour * 80 - 150,
-        behavior: "smooth",
-      });
+    if (modalOpen && selectedGroup && appointmentGroups) {
+      const updated = appointmentGroups.find(g => g.hourInt === selectedGroup.hourInt);
+      if (updated) {
+        setSelectedGroup(updated);
+      }
     }
-  }, [selectedDate]);
+  }, [appointmentGroups, modalOpen, selectedGroup]);
 
-  const scrollDates = (dir) => {
-    if (dateStripRef.current) {
-      dateStripRef.current.scrollBy({
-        left: dir === "left" ? -300 : 300,
-        behavior: "smooth",
-      });
+  // 4. Handle Actions (Start/End)
+  const handleAction = async (id: number, action: "start" | "end") => {
+    setProcessingId(id);
+    try {
+      await apiClient.patch(`/doctor/appointments/${id}/${action}`);
+      toast.success(`Consultation ${action === 'start' ? 'started' : 'completed'}`);
+      
+      // Force an immediate refresh from server to update UI state
+      await refetch(); 
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Action failed");
+    } finally {
+      setProcessingId(null);
     }
   };
 
-  const getCurrentTimePosition = () => {
-    const now = new Date();
-    return getHours(now) * 80 + getMinutes(now) * (80 / 60) + 20;
-  };
+  const dates = Array.from({ length: 28 }, (_, i) => addDays(subDays(startOfToday(), 2), i));
+  const hasData = appointmentGroups && appointmentGroups.length > 0;
 
   return (
-    <div className="card flex flex-col h-full animate-in fade-in duration-500">
+    <div className="h-full flex flex-col bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
       {/* HEADER */}
-      <header className="flex-shrink-0 z-30 border-t-0 border-x-0 rounded-none bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md">
-        <div className="px-6 py-4 flex items-center justify-between">
+      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0 z-20">
+        <div className="px-8 py-6 flex justify-between items-center">
           <div>
-            <Breadcrumbs
-              items={[{ label: "Doctor" }, { label: "My Patients Today" }]}
-            />
-            <h1 className="heading-1 font-black">Daily Schedule</h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <Clock size={12} className="text-zinc-400" />
-              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                {format(selectedDate, "MMMM yyyy")}
-              </p>
+            <Breadcrumbs items={[{ label: "Doctor" }, { label: "Schedule" }]} />
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-black text-zinc-900 dark:text-white flex items-center gap-3">
+                Daily Timeline
+              </h1>
+              
+              {/* Status Indicators */}
+              {error && (
+                <span className="flex items-center gap-1 text-[10px] font-bold uppercase bg-rose-100 text-rose-600 px-2 py-1 rounded-md">
+                  <WifiOff size={12} /> Offline Mode
+                </span>
+              )}
+              {isSyncing && !isLoading && (
+                 <span className="flex items-center gap-1 text-[10px] font-bold uppercase text-indigo-500 animate-pulse">
+                   <RefreshCw size={12} className="animate-spin" /> Syncing...
+                 </span>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {!isSameDay(selectedDate, new Date()) && (
-              <button
-                onClick={() => setSelectedDate(new Date())}
-                className="text-[10px] font-black uppercase tracking-widest text-primary-600 bg-primary-500/10 px-6 py-2 rounded-xl border border-primary-500/20 hover:bg-primary-500/20 transition-all"
-              >
-                Go to Today
-              </button>
-            )}
-          </div>
+          {!isSameDay(selectedDate, new Date()) && (
+            <button onClick={() => setSelectedDate(new Date())} className="text-[10px] font-black uppercase bg-indigo-500 text-white px-6 py-2.5 rounded-2xl">Today</button>
+          )}
         </div>
 
-        <div className="relative w-full border-t border-zinc-100 dark:border-zinc-800 py-4 group">
-          <button
-            onClick={() => scrollDates("left")}
-            className="absolute left-0 top-0 bottom-0 z-20 w-12 bg-gradient-to-r from-white via-white/95 to-transparent dark:from-zinc-950 dark:via-zinc-950/95 flex items-center justify-start pl-2 text-zinc-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all"
-          >
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-          <div
-            ref={dateStripRef}
-            className="flex overflow-x-auto no-scrollbar gap-2 px-6 scroll-smooth"
-          >
+        {/* Date Strip */}
+        <div className="relative group border-t border-zinc-100 dark:border-zinc-800/50 py-4">
+          <div className="flex overflow-x-auto no-scrollbar gap-3 px-8">
             {dates.map((d, i) => {
-              const isSelected = isSameDay(d, selectedDate);
-              const isToday = isSameDay(d, new Date());
+              const active = isSameDay(d, selectedDate);
               return (
-                <button
-                  key={i}
-                  onClick={() => setSelectedDate(d)}
-                  className={`flex-shrink-0 relative w-[56px] h-[68px] rounded-2xl flex flex-col items-center justify-center transition-all duration-300 border select-none 
-                           ${
-                             isSelected
-                               ? "bg-primary-600 border-primary-600 text-white shadow-lg shadow-primary-500/20 scale-105 z-10"
-                               : "bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-primary-500/30"
-                           }`}
+                <button key={i} onClick={() => setSelectedDate(d)}
+                  className={`flex-shrink-0 w-14 h-20 rounded-2xl flex flex-col items-center justify-center transition-all border ${
+                    active ? "bg-indigo-600 border-indigo-600 text-white shadow-xl shadow-indigo-500/30" : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-500"
+                  }`}
                 >
-                  <span
-                    className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isSelected ? "text-white/80" : "text-zinc-500"}`}
-                  >
-                    {format(d, "EEE")}
-                  </span>
-                  <span className="text-xl font-black leading-none">
-                    {format(d, "d")}
-                  </span>
-                  {isToday && !isSelected && (
-                    <div className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white dark:border-zinc-950" />
-                  )}
+                  <span className={`text-[9px] font-black uppercase mb-1 ${active ? "text-indigo-100" : "text-zinc-400"}`}>{format(d, "EEE")}</span>
+                  <span className="text-xl font-black">{format(d, "d")}</span>
                 </button>
               );
             })}
           </div>
-          <button
-            onClick={() => scrollDates("right")}
-            className="absolute right-0 top-0 bottom-0 z-20 w-12 bg-gradient-to-l from-white via-white/95 to-transparent dark:from-zinc-950 dark:via-zinc-950/95 flex items-center justify-end pr-2 text-zinc-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all"
-          >
-            <ChevronRight className="w-6 h-6" />
-          </button>
         </div>
       </header>
 
       {/* TIMELINE */}
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto relative bg-zinc-50 dark:bg-transparent app-scrollbar"
-      >
-        <div
-          className="relative w-full pb-32 pt-8"
-          style={{ height: "2000px" }}
-        >
-          {/* Grid Lines */}
-          {Array.from({ length: 24 }).map((_, h) => (
-            <div
-              key={h}
-              className="flex w-full absolute pointer-events-none px-6"
-              style={{ top: h * 80 + 20, height: 80 }}
-            >
-              <div className="w-20 flex-shrink-0 -mt-2.5">
-                <span className="text-[11px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest font-mono">
-                  {h === 0
-                    ? "Midnight"
-                    : h === 12
-                      ? "Noon"
-                      : (h % 12) + (h >= 12 ? " PM" : " AM")}
-                </span>
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto relative p-8 app-scrollbar">
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center gap-3">
+            <Loader2 className="animate-spin text-indigo-600 w-10 h-10" />
+            <p className="text-sm font-bold text-zinc-400">Loading schedule...</p>
+          </div>
+        ) : !hasData ? (
+          <div className="flex flex-col h-full items-center justify-center text-zinc-400">
+             <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-900 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle size={24} />
+             </div>
+             <p className="text-sm font-bold">No appointments for this day</p>
+          </div>
+        ) : (
+          <div className="relative w-full max-w-5xl mx-auto" style={{ height: "1920px" }}>
+            {/* Hour Markers */}
+            {Array.from({ length: 24 }).map((_, h) => (
+              <div key={h} className="absolute w-full border-t border-zinc-200 dark:border-zinc-800 border-dashed flex gap-6" style={{ top: h * 80, height: 80 }}>
+                <span className="text-[11px] font-bold text-zinc-400 w-12 -mt-2 font-mono">{h}:00</span>
               </div>
-              <div className="flex-1 border-t border-zinc-200 dark:border-zinc-800 border-dashed"></div>
-            </div>
-          ))}
+            ))}
 
-          {/* Current Time Line */}
-          {isSameDay(selectedDate, new Date()) && (
-            <div
-              className="absolute w-full z-20 pointer-events-none flex items-center px-6"
-              style={{ top: getCurrentTimePosition() }}
-            >
-              <div className="w-20 flex justify-start -ml-2">
-                <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-lg shadow-lg shadow-rose-500/20">
-                  {format(currentTime, "hh:mm a")}
-                </span>
+            {/* Current Time Line */}
+            {isSameDay(selectedDate, new Date()) && (
+              <div className="absolute w-full z-20 flex items-center pointer-events-none" 
+                   style={{ top: getHours(currentTime) * 80 + getMinutes(currentTime) * (80 / 60) }}>
+                <div className="w-12 text-rose-500 text-[10px] font-black font-mono -ml-2">{format(currentTime, "HH:mm")}</div>
+                <div className="flex-1 h-px bg-rose-500 relative shadow-[0_0_10px_rgba(244,63,94,0.5)]" />
               </div>
-              <div className="flex-1 h-px bg-rose-500 relative">
-                <div className="absolute -left-1 -top-[4px] w-2.5 h-2.5 bg-rose-500 rounded-full shadow-[0_0_12px_rgba(244,63,94,0.6)]" />
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* Appointment Cards */}
-          {appointments.map((appt) => (
-            <div
-              key={appt.id}
-              onClick={() => {
-                setSelectedGroup(appt);
-                setModalOpen(true);
-              }}
-              className="absolute left-28 right-8 z-10 cursor-pointer group"
-              style={{ top: appt.startTime * 80 + 20, height: 80 }}
-            >
-              <div
-                className={`h-full w-full rounded-2xl border transition-all p-5 flex items-center justify-between shadow-sm group-hover:shadow-xl group-hover:scale-[1.01] active:scale-[0.99]
-                     ${
-                       appt.hasActive
-                         ? "bg-amber-500/10 border-amber-500/40 dark:bg-amber-900/10"
-                         : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-md"
-                     }`}
+            {/* Render Hourly Groups */}
+            {appointmentGroups?.map((group) => (
+              <div key={group.hourInt}
+                onClick={() => { setSelectedGroup(group); setModalOpen(true); }}
+                className={`absolute left-20 right-0 z-10 cursor-pointer p-6 rounded-[2rem] border transition-all flex justify-between items-center group/card ${
+                  group.hasActive ? "bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-500/5" : "bg-white dark:bg-zinc-900 border-zinc-200 shadow-sm hover:border-indigo-300"
+                }`}
+                style={{ top: group.hourInt * 80 + 10, height: 100 }}
               >
                 <div className="flex items-center gap-6">
-                  <div
-                    className={`w-2 h-12 rounded-full ${appt.hasActive ? "bg-amber-500" : "bg-primary-500"}`}
-                  />
-                  <div className="flex flex-col">
-                    <span className="font-black text-xl tracking-tight text-zinc-900 dark:text-zinc-100">
-                      {appt.timeSlot}
-                    </span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <User size={12} className="text-zinc-400" />
-                      <span className="text-[11px] font-black text-zinc-500 dark:text-zinc-400 capitalize">
-                        {appt.totalPatients} Patients in line
-                      </span>
-                    </div>
+                  <div className={`w-2 h-14 rounded-full ${group.hasActive ? "bg-amber-500" : "bg-indigo-500"}`} />
+                  <div>
+                    <h4 className="font-black text-xl tracking-tight text-zinc-900 dark:text-white">{group.hourRange}</h4>
+                    <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{group.totalPatients} Patients</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  {appt.hasActive && (
-                    <span className="bg-amber-500 text-white text-[10px] font-black px-3 py-1 rounded-full animate-pulse tracking-widest">
-                      DR. BUSY
-                    </span>
+                  {group.hasActive && (
+                    <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
                   )}
-                  <div className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 group-hover:bg-primary-500 group-hover:text-white transition-all">
-                    <ChevronRight
-                      className="transition-all"
-                      size={20}
-                      strokeWidth={2.5}
-                    />
-                  </div>
+                  <ChevronRight size={20} className="text-zinc-400 group-hover/card:translate-x-1 transition-transform" />
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      <AppointmentModal
+      <Modal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
         group={selectedGroup}
+        onAction={handleAction}
+        onClose={() => setModalOpen(false)}
+        processingId={processingId}
       />
     </div>
   );
 }
+
+// ==========================================
+// MODAL COMPONENT (Unchanged logic, just separated)
+// ==========================================
+
+const Modal = ({ isOpen, group, onAction, onClose, processingId }: any) => {
+  if (!isOpen || !group) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose} />
+
+      <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-[2.5rem] overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
+        <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/50">
+          <div>
+            <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest block mb-1">Queue for {group.hourRange}</span>
+            <h3 className="text-lg font-black text-zinc-900 dark:text-white">Patient Actions</h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-colors">
+            <X size={20} className="text-zinc-400" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto app-scrollbar">
+          {group.patients.map((p: APIAppointment) => {
+            const isProcessing = processingId === p.id;
+            
+            const isCompleted = p.raw_status === "Completed";
+            const isInProgress = p.raw_status === "In Consultation";
+
+            return (
+              <div key={p.id} className="flex justify-between items-center p-5 bg-zinc-50/50 dark:bg-zinc-950/30 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl">
+                <div className="flex items-center gap-4">
+                   <div className="w-10 h-10 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xs font-black text-zinc-400">
+                     #{p.number}
+                   </div>
+                  <div>
+                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{p.patientName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest">{p.time}</p>
+                      <span className="text-[10px] text-zinc-300">•</span>
+                      <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest truncate max-w-[120px]">{p.type}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {!isCompleted && (
+                    <button
+                      disabled={isProcessing}
+                      onClick={() => onAction(p.id, isInProgress ? "end" : "start")}
+                      className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center transition-all shadow-lg ${
+                        isInProgress
+                          ? "bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20"
+                          : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/20"
+                      } disabled:opacity-50`}
+                    >
+                      {isProcessing ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : isInProgress ? (
+                        <CheckCircle size={20} />
+                      ) : (
+                        <Play size={18} fill="currentColor" className="ml-0.5" />
+                      )}
+                    </button>
+                  )}
+
+                  {isCompleted && (
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600">
+                      <CheckCircle size={24} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};

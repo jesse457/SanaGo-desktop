@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Users,
   Clock,
@@ -9,15 +9,15 @@ import {
   Settings,
   LogOut,
   MoreVertical,
-  WifiOff, // Added for offline indicator
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "../../providers/AuthProvider"; // Adjust path
-import { useTheme } from "../../providers/ThemeProvider"; // Adjust path
-import { apiClient } from "../../services/api/authService";
-import { storageService } from "../../services/api/StorageService";
+import { useAuth } from "../../providers/AuthProvider";
+import { apiClient } from "../../services/authService";
+// 1. Import the hook
+import { useOfflineSync } from "../../hooks/useOfflineSync";
 
-// --- Types (Based on your Laravel API Resource) ---
+// --- Types ---
 interface DashboardStats {
   total_patients: number;
   today_pending: number;
@@ -27,8 +27,6 @@ interface DashboardStats {
 interface AppointmentPatient {
   id: number;
   full_name: string;
-  first_name: string;
-  last_name: string;
 }
 
 interface AppointmentDoctor {
@@ -38,71 +36,61 @@ interface AppointmentDoctor {
 
 interface Appointment {
   id: number;
-  time: string; // "14:30"
+  time: string;
   status: string;
   patient: AppointmentPatient;
   doctor: AppointmentDoctor;
 }
 
-const ReceptionDashboard = () => {
-  // Hooks
-  const { user, logout } = useAuth();
-  const { theme } = useTheme(); // Use global theme
-  
-  // Local State
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [isOfflineMode, setIsOfflineMode] = useState(false);
+// Wrapper interface for the API response
+interface DashboardResponse {
+  stats: DashboardStats;
+  tables: {
+    appointments_today: Appointment[];
+  };
+}
 
-  // Data State
-  const [stats, setStats] = useState<DashboardStats>({
+const ReceptionDashboard = () => {
+  const { user, logout } = useAuth();
+  
+  // UI State
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // 2. The Hook Implementation
+  // Replaces: useState(stats), useState(appointments), useState(loading), useEffect()
+  const { 
+    data, 
+    isLoading, 
+    error 
+  } = useOfflineSync<DashboardResponse>({
+    key: "reception_dashboard_main", // Unique key for storage
+    fetchFn: async () => {
+      const response = await apiClient.get('/receptionist/dashboard');
+      return response.data; // Return the whole object { stats, tables }
+    },
+    autoRefresh: true, // Dashboard needs live data
+    refreshInterval: 60000 * 2, // Check every 2 minutes
+  });
+
+  // 3. Derived Data (Protect against null data during first load)
+  const stats: DashboardStats = data?.stats || {
     total_patients: 0,
     today_pending: 0,
     today_confirmed: 0,
-  });
-
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-
-  // Initial Load
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
-    setLoading(true);
-    try {
-      // 1. Try Network Request
-      const response = await apiClient.get('/receptionist/dashboard');
-      const data = response.data;
-
-      // 2. Set State
-      setStats(data.stats);
-      setAppointments(data.tables.appointments_today);
-      setIsOfflineMode(false);
-
-      // 3. Save for Offline Use (Encryption handled by main process)
-      await storageService.save(storageService.KEYS.DASHBOARD_STATS, data);
-
-    } catch (error) {
-      console.error("Dashboard load failed:", error);
-      
-      // 4. Offline Fallback
-      const cachedData = await storageService.get<any>(storageService.KEYS.DASHBOARD_STATS);
-      
-      if (cachedData) {
-        setStats(cachedData.stats);
-        setAppointments(cachedData.tables.appointments_today);
-        setIsOfflineMode(true);
-        toast.warning("Network unavailable. Showing cached data.");
-      } else {
-        toast.error("Connection failed and no offline data found.");
-      }
-    } finally {
-      setLoading(false);
-    }
   };
 
-  // Helper for Status Colors
+  const allAppointments = data?.tables?.appointments_today || [];
+  
+  // Simple client-side search filtering
+  const filteredAppointments = allAppointments.filter(apt => 
+    apt.patient.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // If we have an error, we assume we are in offline mode (using cache if available)
+  const isOfflineMode = !!error;
+
+  // --- Helpers ---
   const getStatusStyle = (status: string) => {
     const map: Record<string, string> = {
       waiting: "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20",
@@ -114,7 +102,6 @@ const ReceptionDashboard = () => {
     return map[status.toLowerCase()] || "bg-zinc-100 text-zinc-500";
   };
 
-  // Helper for Initials
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
   return (
@@ -125,7 +112,7 @@ const ReceptionDashboard = () => {
         <div>
           <h1 className="text-xl font-black text-zinc-900 dark:text-white tracking-tighter uppercase flex items-center gap-2">
             Reception Hub
-            {isOfflineMode && <WifiOff className="text-rose-500 h-5 w-5" />}
+            {isOfflineMode && <WifiOff className="text-rose-500 h-5 w-5 animate-pulse" />}
           </h1>
           <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-0.5">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -191,7 +178,8 @@ const ReceptionDashboard = () => {
               <div>
                 <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em]">Total Patients</p>
                 <h3 className="text-4xl font-black text-zinc-900 dark:text-white mt-3 tracking-tighter">
-                  {stats.total_patients}
+                  {/* Show specific loader or the data */}
+                  {isLoading && !data ? "..." : stats.total_patients}
                 </h3>
               </div>
               <div className="p-4 rounded-2xl bg-blue-500/10 text-blue-500">
@@ -205,7 +193,7 @@ const ReceptionDashboard = () => {
               <div>
                 <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em]">Pending Today</p>
                 <h3 className="text-4xl font-black text-zinc-900 dark:text-white mt-3 tracking-tighter">
-                  {stats.today_pending}
+                  {isLoading && !data ? "..." : stats.today_pending}
                 </h3>
               </div>
               <div className="p-4 rounded-2xl bg-amber-500/10 text-amber-500">
@@ -219,7 +207,7 @@ const ReceptionDashboard = () => {
               <div>
                 <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em]">Confirmed</p>
                 <h3 className="text-4xl font-black text-zinc-900 dark:text-white mt-3 tracking-tighter">
-                  {stats.today_confirmed}
+                  {isLoading && !data ? "..." : stats.today_confirmed}
                 </h3>
               </div>
               <div className="p-4 rounded-2xl bg-emerald-500/10 text-emerald-500">
@@ -242,6 +230,8 @@ const ReceptionDashboard = () => {
               <input 
                 type="text" 
                 placeholder="Search patient..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-11 pr-4 py-2.5 text-sm font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
               />
             </div>
@@ -259,20 +249,24 @@ const ReceptionDashboard = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {loading ? (
+                {/* 
+                  Show loading only if we have NO data (not even in cache).
+                  Otherwise show the list (even if refreshing in background)
+                */}
+                {isLoading && !data ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-8 text-center text-sm font-bold text-zinc-500">
-                      Loading data...
+                      Loading dashboard data...
                     </td>
                   </tr>
-                ) : appointments.length === 0 ? (
+                ) : filteredAppointments.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-8 text-center text-sm font-bold text-zinc-500">
-                      No appointments scheduled for today.
+                      {searchTerm ? "No matching patients found." : "No appointments scheduled for today."}
                     </td>
                   </tr>
                 ) : (
-                  appointments.map((apt) => (
+                  filteredAppointments.map((apt) => (
                     <tr key={apt.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3 text-xs font-black text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 w-fit">

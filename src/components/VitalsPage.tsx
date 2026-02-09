@@ -14,6 +14,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "../utils/cn";
+import Dropdown from "./Dropdown";
 
 const VitalsPage = () => {
   const [activePatient, setActivePatient] = useState("PT-1024");
@@ -47,21 +48,14 @@ const VitalsPage = () => {
           <div className="card-base p-1">
             {/* Fake Command Palette Select */}
             <div className="relative">
-              <select
-                className="w-full appearance-none bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm rounded-lg p-3 pl-10 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none font-medium cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                value={activePatient}
-                onChange={(e) => setActivePatient(e.target.value)}
-              >
-                <option value="PT-1024">Johnathan Doe</option>
-                <option value="PT-1025">Sarah Connor</option>
-              </select>
-              <User
-                size={16}
-                className="absolute left-3.5 top-3.5 text-zinc-400"
-              />
-              <ChevronDown
-                size={14}
-                className="absolute right-3.5 top-4 text-zinc-400"
+              <Dropdown
+                label={activePatient === "PT-1024" ? "Johnathan Doe" : "Sarah Connor"}
+                items={[
+                  { label: "Johnathan Doe", onClick: () => setActivePatient("PT-1024") },
+                  { label: "Sarah Connor", onClick: () => setActivePatient("PT-1025") }
+                ]}
+                className="w-full"
+                buttonClassName="w-full appearance-none bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm rounded-lg p-3 pl-10 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none font-medium cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
               />
             </div>
 
@@ -167,7 +161,7 @@ const VitalsPage = () => {
                 <input
                   type="checkbox"
                   id="abnormal"
-                  className="w-4 h-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500 cursor-pointer"
+                  className="w-4 h-4 text-orange-600 rounded border-gray-300 dark:border-gray-600 focus:ring-orange-500 cursor-pointer"
                 />
                 <label
                   htmlFor="abnormal"

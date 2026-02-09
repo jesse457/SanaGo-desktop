@@ -14,24 +14,25 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { apiClient } from "../../services/api/authService";
-import { storageService } from "../../services/api/StorageService";
+import { apiClient } from "../../services/authService";
 import Breadcrumbs from "../../components/Breadcrumbs";
+import Dropdown from "../../components/Dropdown";
+// 1. Import the hook
+import { useOfflineSync } from "../../hooks/useOfflineSync";
 
 // --- Types ---
 interface Appointment {
   id: number;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:mm
+  date: string;
+  time: string;
   status: string;
   queue_position: number | null;
   patient: {
     id: number;
     full_name: string;
-    // Helper for UI initials
     first_name: string; 
     last_name: string;
-    uid?: string; // If your API sends patient ID string (e.g., P-1001)
+    uid?: string;
   };
   doctor: {
     id: number;
@@ -41,80 +42,66 @@ interface Appointment {
 }
 
 const AppointmentsView = () => {
-  // --- State ---
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isOffline, setIsOffline] = useState(false);
-
-  // Filters
+  // --- UI State (Filters) ---
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState(""); // Used for the hook key
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
 
-  // Modal State
+  // --- Modal State ---
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
 
-  // --- Effects ---
-  
-  // Debounce Search & Filter
+  // 1. Debounce Logic: 
+  // Wait 500ms after user stops typing before updating 'debouncedSearch'.
+  // This changes the Hook's KEY, triggering the fetch.
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchAppointments();
+      setDebouncedSearch(search);
     }, 500);
     return () => clearTimeout(timer);
-  }, [search, statusFilter, dateFilter]);
+  }, [search]);
 
-  // --- API Actions ---
-
-  const fetchAppointments = async () => {
-    setLoading(true);
-    try {
+  // 2. The Hook Implementation
+  const { 
+    data, 
+    isLoading, 
+    error, 
+    refetch 
+  } = useOfflineSync<Appointment[]>({
+    // Unique key per filter combination. 
+    // Example: "appointments_list_John_scheduled_2023-10-01"
+    key: `appointments_list_${debouncedSearch}_${statusFilter}_${dateFilter}`,
+    
+    fetchFn: async () => {
       const params = new URLSearchParams();
-      if (search) params.append("search", search);
+      if (debouncedSearch) params.append("search", debouncedSearch);
       if (statusFilter) params.append("status", statusFilter);
       if (dateFilter) params.append("date", dateFilter);
 
-      // GET /api/receptionist/appointments
       const response = await apiClient.get(`/receptionist/appointments?${params.toString()}`);
-      
-      const data = response.data.data; // Assuming Laravel Resource Collection wraps in 'data'
-      setAppointments(data);
-      setIsOffline(false);
+      return response.data.data;
+    },
+    autoRefresh: true, 
+    refreshInterval: 60000 // Background refresh every 1 minute
+  });
 
-      // Cache default view for offline usage
-      if (!search && !statusFilter && !dateFilter) {
-        await storageService.save(storageService.KEYS.APPOINTMENTS_LIST, data);
-      }
+  // 3. Derived Data
+  const appointments = data || [];
+  // If the hook has an error (network fail), we are in offline mode (viewing cache)
+  const isOffline = !!error; 
 
-    } catch (error) {
-      console.error("Network failed", error);
-      
-      // Offline Fallback
-      const cachedData = await storageService.get<Appointment[]>(storageService.KEYS.APPOINTMENTS_LIST);
-      if (cachedData) {
-        setAppointments(cachedData);
-        setIsOffline(true);
-        toast.warning("Network error. Showing cached appointments.");
-      } else {
-        setAppointments([]);
-        toast.error("Failed to load appointments.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  // --- API Actions ---
 
   const handleCancel = async (id: number) => {
     if (isOffline) return toast.error("Cannot cancel while offline.");
     
     try {
-      // PATCH /api/receptionist/appointments/{id}/cancel
       await apiClient.patch(`/receptionist/appointments/${id}/cancel`);
       toast.success("Appointment canceled");
-      fetchAppointments();
+      refetch(); // Force immediate update
     } catch (error) {
       toast.error("Failed to cancel appointment");
     }
@@ -124,10 +111,9 @@ const AppointmentsView = () => {
     if (isOffline) return toast.error("Cannot check-in while offline.");
 
     try {
-      // PATCH /api/receptionist/appointments/{id}/confirm
       await apiClient.patch(`/receptionist/appointments/${id}/confirm`);
       toast.success("Check-in confirmed. Patient added to queue.");
-      fetchAppointments();
+      refetch(); // Force immediate update
     } catch (error) {
       toast.error("Failed to confirm check-in");
     }
@@ -145,14 +131,13 @@ const AppointmentsView = () => {
     if (!selectedAppointment) return;
 
     try {
-      // PUT /api/receptionist/appointments/{id} (Standard Resource Update)
       await apiClient.put(`/receptionist/appointments/${selectedAppointment.id}`, {
         date: rescheduleDate,
         time: rescheduleTime
       });
       toast.success("Rescheduled successfully");
       setShowRescheduleModal(false);
-      fetchAppointments();
+      refetch(); // Force immediate update
     } catch (error) {
       toast.error("Failed to reschedule");
     }
@@ -195,11 +180,12 @@ const AppointmentsView = () => {
           </div>
           <div className="flex gap-3">
              <button 
-                onClick={fetchAppointments}
+                onClick={refetch}
                 className="p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                 title="Refresh Data"
             >
-                <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
+                {/* Spin only if loading AND we already have data (background refresh) */}
+                <RefreshCcw size={20} className={isLoading && data ? "animate-spin text-primary-500" : ""} />
             </button>
             <Link to="/reception/book-appointment">
                 <button className="button-primary flex items-center gap-2 py-3.5 px-6 shadow-xl bg-gradient-to-tr from-rose-500 to-pink-500 border-none">
@@ -218,6 +204,7 @@ const AppointmentsView = () => {
             type="text"
             placeholder="Search Patient (Name, ID)..."
             value={search}
+            // Update UI immediately, but hook waits for debounce effect
             onChange={(e) => setSearch(e.target.value)}
             disabled={isOffline}
             className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-11 pr-4 py-3 text-sm font-bold text-zinc-900 dark:text-white focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 outline-none transition-all placeholder:text-zinc-400 disabled:opacity-50"
@@ -232,19 +219,19 @@ const AppointmentsView = () => {
             disabled={isOffline}
             className={filterInputClasses} 
           />
-          <select 
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            disabled={isOffline}
-            className={filterInputClasses}
-          >
-            <option value="">All Statuses</option>
-            <option value="Scheduled">Scheduled</option>
-            <option value="Waiting">Waiting</option>
-            <option value="In Consultation">In Consultation</option>
-            <option value="Completed">Completed</option>
-            <option value="Canceled">Canceled</option>
-          </select>
+          <Dropdown
+            label={statusFilter || "All Statuses"}
+            items={[
+              { label: "All Statuses", onClick: () => setStatusFilter("") },
+              { label: "Scheduled", onClick: () => setStatusFilter("Scheduled") },
+              { label: "Waiting", onClick: () => setStatusFilter("Waiting") },
+              { label: "In Consultation", onClick: () => setStatusFilter("In Consultation") },
+              { label: "Completed", onClick: () => setStatusFilter("Completed") },
+              { label: "Canceled", onClick: () => setStatusFilter("Canceled") }
+            ]}
+            className="w-full"
+            buttonClassName={filterInputClasses}
+          />
           <button 
              onClick={() => { setSearch(""); setDateFilter(""); setStatusFilter(""); }}
              className="p-2.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-colors"
@@ -269,7 +256,11 @@ const AppointmentsView = () => {
                 </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800 overflow-y-auto">
-                {loading && appointments.length === 0 ? (
+                {/* 
+                  Only show the Big Spinner if we are loading AND have no cached data.
+                  If we have cached data, we show it while background syncing.
+                */}
+                {isLoading && !data ? (
                     <tr><td colSpan={6} className="p-12 text-center text-zinc-400"><Loader2 className="animate-spin mx-auto mb-2" /> Loading...</td></tr>
                 ) : appointments.length === 0 ? (
                     <tr><td colSpan={6} className="p-12 text-center text-zinc-400 font-bold text-sm">No appointments found matching your criteria.</td></tr>

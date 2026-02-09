@@ -3,7 +3,6 @@ import {
   Home,
   ChevronRight,
   FileText,
-  DollarSign,
   Layers,
   ArrowDownCircle,
   Beaker,
@@ -15,48 +14,129 @@ import {
   Loader2,
   ArrowLeft
 } from "lucide-react";
+import { apiClient } from "../../services/authService"; // Adjust path as needed
+import { useNavigate } from "react-router-dom";
 
-const CreateDrug = () => {
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: '' }
+// --- Interfaces ---
+interface MedicationFormData {
+  name: string;
+  unit_price: string;      // Keep as string for input state to prevent NaN issues
+  stock_quantity: string;  // Keep as string for input state
+  min_stock_level: string;// Keep as string for input state
+  dosage_unit: string;
+  description: string;
+}
+
+interface StatusState {
+  type: 'success' | 'error';
+  message: string;
+}
+
+const CreateDrug: React.FC = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState<boolean>(false);
+  const [status, setStatus] = useState<StatusState | null>(null);
 
   // Form State
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<MedicationFormData>({
     name: "",
-    price: "",
-    stock: "",
-    minStock: "",
-    unit: "",
+    unit_price: "",
+    stock_quantity: "",
+    min_stock_level: "",
+    dosage_unit: "",
     description: ""
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    setStatus(null);
+
+    // 1. Prepare Payload: Convert strings to numbers for the API
+    const payload = {
+      name: formData.name,
+      dosage_unit: formData.dosage_unit,
+      description: formData.description,
+      // Ensure these are sent as numbers, or null if empty
+      unit_price: formData.unit_price ? parseFloat(formData.unit_price) : 0,
+      stock_quantity: formData.stock_quantity ? parseInt(formData.stock_quantity) : 0,
+      min_stock_level: formData.min_stock_level ? parseInt(formData.min_stock_level) : 0,
+    };
+
+    try {
+      // 2. Submit to API
+      const response = await apiClient.post("/pharmacist/inventory", payload);
+
+      if (response.status === 200 || response.status === 201) {
+        setStatus({ 
+          type: "success", 
+          message: "Medication successfully added to inventory!" 
+        });
+        
+        // 3. Reset form
+        setFormData({
+          name: "",
+          unit_price: "",
+          stock_quantity: "",
+          min_stock_level: "",
+          dosage_unit: "",
+          description: ""
+        });
+
+        // Optional: Navigate back after short delay
+        setTimeout(() => {
+            navigate('/pharmacist/inventory'); 
+        }, 1500);
+      }
+    } catch (error: any) {
+      console.error("Submission error:", error);
+      
+      // 4. Extract specific error message
+      // Laravel validation errors usually come in error.response.data.message or error.response.data.errors
+      let errorMessage = "Failed to register medication.";
+      
+      if (error.response && error.response.data) {
+         if (error.response.data.message) {
+            errorMessage = error.response.data.message;
+         }
+         // If there are field-specific errors, grab the first one
+         if (error.response.data.errors) {
+            const firstErrorKey = Object.keys(error.response.data.errors)[0];
+            if (firstErrorKey) {
+                errorMessage = error.response.data.errors[firstErrorKey][0];
+            }
+         }
+      }
+
+      setStatus({ 
+        type: "error", 
+        message: errorMessage 
+      });
+    } finally {
       setLoading(false);
-      setStatus({ type: "success", message: "Medication successfully added to inventory!" });
-    }, 1500);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-500">
       
       {/* --- STICKY HEADER --- */}
-     <header className="flex-shrink-0 z-30  border-b border-x-0 rounded-none border-b border-slate-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md">
-              <div className="px-6 py-4 md:flex md:items-center md:justify-between space-y-3 md:space-y-0">
-          
-          
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <header className="flex-shrink-0 z-30 border-b border-x-0 rounded-none border-slate-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md">
+        <div className="px-6 py-4 md:flex md:items-center md:justify-between space-y-3 md:space-y-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
             <div>
               <nav className="flex items-center gap-2 mb-4">
-            <Home size={12} className="text-zinc-400" />
-            <ChevronRight size={12} className="text-zinc-300" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Manage Drugs</span>
-            <ChevronRight size={12} className="text-zinc-300" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-900 dark:text-white">Create New</span>
-          </nav>
+                <Home size={12} className="text-zinc-400" />
+                <ChevronRight size={12} className="text-zinc-300" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Manage Drugs</span>
+                <ChevronRight size={12} className="text-zinc-300" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-900 dark:text-white">Create New</span>
+              </nav>
               <h1 className="heading-1 font-black text-zinc-900 dark:text-white tracking-tighter">
                 Register New Drug
               </h1>
@@ -64,7 +144,10 @@ const CreateDrug = () => {
                 Define the medication parameters, pricing, and safety stock levels.
               </p>
             </div>
-            <button className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">
+            <button 
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+            >
               <ArrowLeft size={14} /> Back to Inventory
             </button>
           </div>
@@ -72,7 +155,7 @@ const CreateDrug = () => {
       </header>
 
       {/* --- FORM AREA --- */}
-      <div className=" mx-auto w-full px-8 pb-20 m-4">
+      <div className="mx-auto w-full px-8 pb-20 m-4">
         
         {/* Status Alerts */}
         {status && (
@@ -103,10 +186,12 @@ const CreateDrug = () => {
                   <FileText className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-blue-500 transition-colors" size={18} />
                   <input 
                     type="text" 
+                    name="name"
                     required
+                    value={formData.name}
                     placeholder="e.g., Amoxicillin"
                     className="w-full h-12 pl-12 pr-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:bg-white dark:focus:bg-zinc-800 focus:border-blue-500/30 transition-all outline-none"
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    onChange={handleInputChange}
                   />
                 </div>
               </div>
@@ -120,9 +205,14 @@ const CreateDrug = () => {
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-black text-xs">FCFA</div>
                   <input 
                     type="number" 
+                    name="unit_price"
                     required
+                    min="0"
+                    step="0.01"
+                    value={formData.unit_price}
                     placeholder="0.00"
                     className="w-full h-12 pl-16 pr-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:bg-white dark:focus:bg-zinc-800 focus:border-blue-500/30 transition-all outline-none"
+                    onChange={handleInputChange}
                   />
                 </div>
               </div>
@@ -136,9 +226,13 @@ const CreateDrug = () => {
                   <Layers className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-blue-500 transition-colors" size={18} />
                   <input 
                     type="number" 
+                    name="stock_quantity"
                     required
+                    min="0"
+                    value={formData.stock_quantity}
                     placeholder="Quantity"
                     className="w-full h-12 pl-12 pr-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:bg-white dark:focus:bg-zinc-800 focus:border-blue-500/30 transition-all outline-none"
+                    onChange={handleInputChange}
                   />
                 </div>
               </div>
@@ -152,9 +246,13 @@ const CreateDrug = () => {
                   <ArrowDownCircle className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-rose-500 transition-colors" size={18} />
                   <input 
                     type="number" 
+                    name="min_stock_level"
                     required
+                    min="0"
+                    value={formData.min_stock_level}
                     placeholder="Alert level"
                     className="w-full h-12 pl-12 pr-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:bg-white dark:focus:bg-zinc-800 focus:border-rose-500/30 transition-all outline-none"
+                    onChange={handleInputChange}
                   />
                 </div>
               </div>
@@ -168,9 +266,12 @@ const CreateDrug = () => {
                   <Beaker className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-blue-500 transition-colors" size={18} />
                   <input 
                     type="text" 
+                    name="dosage_unit"
                     required
+                    value={formData.dosage_unit}
                     placeholder="e.g., Tablets, ml, mg"
                     className="w-full h-12 pl-12 pr-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:bg-white dark:focus:bg-zinc-800 focus:border-blue-500/30 transition-all outline-none"
+                    onChange={handleInputChange}
                   />
                 </div>
               </div>
@@ -183,9 +284,12 @@ const CreateDrug = () => {
                 <div className="relative group">
                   <Tag className="absolute left-4 top-4 text-zinc-300 group-focus-within:text-blue-500 transition-colors" size={18} />
                   <textarea 
-                    rows="4"
+                    name="description"
+                    rows={4}
+                    value={formData.description}
                     placeholder="Medication uses, contraindications, and storage instructions..."
                     className="w-full pl-12 pr-4 py-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:bg-white dark:focus:bg-zinc-800 focus:border-blue-500/30 transition-all outline-none resize-none"
+                    onChange={handleInputChange}
                   />
                 </div>
               </div>
